@@ -9,6 +9,8 @@
 - `README.md`의 기본 데모 상태 설명을 실제 구현 및 검증 상태로 갱신했다.
 - 생성·수정 파일: `.git/` 생성, `README.md`, 이 명령 기록 수정. 소스와 에셋은 변경하지 않았다.
 - 첫 커밋은 준비한 소스·에셋·설정·문서 162개 파일을 포함한다. `git diff --cached --check`에서 공백 오류가 없음을 확인한 뒤 `git commit`, `git push -u origin main`을 수행한다. 실제 업로드 결과는 원격 커밋 일치 여부로 확인한다.
+- 업로드 결과: 최초 시도는 기존 인증 정보 오류로 실패했다. Git Credential Manager의 기기 인증 로그인을 완료한 뒤 재시도해 `main` 업로드에 성공했다. 비밀번호나 토큰은 문서에 기록하지 않았다.
+- `git rev-parse HEAD`와 `git ls-remote origin refs/heads/main`에서 첫 커밋 `b92c8fec9c7b5e1552407e667dd848cd77aa40de`의 일치를 확인했다. 성공 결과를 이 문서에 추가 커밋해 같은 저장소에 반영한다.
 
 ## 앱 실행 오류 수정
 
