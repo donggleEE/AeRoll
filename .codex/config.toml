@@ -1,0 +1,15 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# AeRoll 프로젝트의 Codex 기본 설정
+# 한국어 응답 및 Markdown 문서 작성 규칙은 루트 AGENTS.md를 따른다.
+# 모델과 추론 수준은 앱 또는 사용자 전역 설정을 따른다.
+
+# 작업 공간 안에서 파일을 수정할 수 있다.
+sandbox_mode = "workspace-write"
+
+# 권한 확대가 필요한 명령은 승인을 요청한다.
+approval_policy = "on-request"
+
+[sandbox_workspace_write]
+# 샌드박스 내부 명령의 외부 네트워크 접근은 기본적으로 제한한다.
+network_access = false
