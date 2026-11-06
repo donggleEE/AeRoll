@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/film_filter.dart';
+import 'film_filter_effect.dart';
 
 class CameraViewfinder extends StatelessWidget {
   const CameraViewfinder({
@@ -13,8 +14,18 @@ class CameraViewfinder extends StatelessWidget {
     required this.isInitializing,
     required this.errorMessage,
     required this.onRetry,
+    this.showGrid = true,
+    this.enableFilter = true,
+    this.previewFit = BoxFit.cover,
+    this.digitalZoom = 1,
+    this.unmirrorFront = false,
   });
 
+  final double digitalZoom;
+  final bool unmirrorFront;
+  final bool showGrid;
+  final bool enableFilter;
+  final BoxFit previewFit;
   final CameraController? controller;
   final FilmFilter filter;
   final double intensity;
@@ -32,27 +43,38 @@ class CameraViewfinder extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           if (ready)
-            _CoveredPreview(controller: camera)
+            ClipRect(
+              child: Transform.scale(
+                key: const Key('camera-digital-zoom'),
+                scale: digitalZoom.isFinite && digitalZoom >= 1
+                    ? digitalZoom
+                    : 1,
+                child: FilmFilterEffect(
+                  filter: filter,
+                  intensity: intensity,
+                  opaque: true,
+                  enabled: enableFilter,
+                  child: _CoveredPreview(
+                    controller: camera,
+                    fit: previewFit,
+                    unmirrorFront:
+                        unmirrorFront &&
+                        camera.description.lensDirection ==
+                            CameraLensDirection.front,
+                  ),
+                ),
+              ),
+            )
           else
             _CameraPlaceholder(
               loading: isInitializing,
               errorMessage: errorMessage,
               onRetry: onRetry,
             ),
-          if (ready && filter.assetPath != null)
-            IgnorePointer(
-              child: Opacity(
-                opacity: intensity.clamp(0, 1),
-                child: Image.asset(
-                  filter.assetPath!,
-                  fit: BoxFit.cover,
-                  excludeFromSemantics: true,
-                ),
-              ),
+          if (showGrid)
+            const IgnorePointer(
+              child: CustomPaint(painter: _CameraGridPainter()),
             ),
-          const IgnorePointer(
-            child: CustomPaint(painter: _CameraGridPainter()),
-          ),
         ],
       ),
     );
@@ -60,7 +82,13 @@ class CameraViewfinder extends StatelessWidget {
 }
 
 class _CoveredPreview extends StatelessWidget {
-  const _CoveredPreview({required this.controller});
+  const _CoveredPreview({
+    required this.controller,
+    required this.fit,
+    required this.unmirrorFront,
+  });
+  final BoxFit fit;
+  final bool unmirrorFront;
   final CameraController controller;
 
   @override
@@ -80,11 +108,14 @@ class _CoveredPreview extends StatelessWidget {
           orientation == DeviceOrientation.portraitDown;
       return ClipRect(
         child: FittedBox(
-          fit: BoxFit.cover,
+          fit: fit,
           child: SizedBox(
             width: portrait ? size.height : size.width,
             height: portrait ? size.width : size.height,
-            child: CameraPreview(controller),
+            child: Transform.flip(
+              flipX: unmirrorFront,
+              child: CameraPreview(controller),
+            ),
           ),
         ),
       );

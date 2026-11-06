@@ -1,19 +1,17 @@
 import 'dart:async';
 import 'dart:isolate';
 
-import 'package:flutter/services.dart';
-import 'package:image/image.dart' as img;
+import 'dart:typed_data';
 
-import '../models/film_filter.dart';
 import 'photo_compositor.dart';
 
-/// 촬영마다 isolate와 PNG 디코더를 새로 만들지 않는 전용 처리기.
+/// 촬영마다 isolate를 새로 만들지 않는 전용 RGB 처리기.
 /// CameraSession의 유한 직렬 큐가 입력 개수와 메모리를 제한한다.
 class PhotoProcessor {
+  Map<String, int> lastTimings = const {};
+  Uint8List? lastThumbnailBytes;
   final _responses = ReceivePort();
   final _requests = <int, Completer<Uint8List>>{};
-  final _assets = <String, Future<Uint8List>>{};
-  final _sentAssets = <String>{};
   Isolate? _isolate;
   SendPort? _sendPort;
   Future<void>? _starting;
@@ -32,8 +30,17 @@ class PhotoProcessor {
         ready.complete();
       } else if (message is List && message.length == 2 && message[0] is int) {
         final request = _requests.remove(message[0] as int);
-        if (message[1] is Uint8List) {
-          request?.complete(message[1] as Uint8List);
+        if (message[1] is Map) {
+          final result = message[1] as Map;
+          lastTimings = Map<String, int>.from(result['timings'] as Map);
+          lastThumbnailBytes = (result['thumbnail'] as TransferableTypedData?)
+              ?.materialize()
+              .asUint8List();
+          request?.complete(
+            (result['bytes'] as TransferableTypedData)
+                .materialize()
+                .asUint8List(),
+          );
         } else {
           request?.completeError(StateError(message[1].toString()));
         }
@@ -56,58 +63,37 @@ class PhotoProcessor {
     await ready.future;
   }
 
-  Future<Uint8List> _loadAsset(String asset) => _assets.putIfAbsent(
-    asset,
-    () async {
-      try {
-        final data = await rootBundle.load(asset);
-        return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-      } catch (_) {
-        _assets.remove(asset);
-        rethrow;
-      }
-    },
-  );
-
-  Future<void> preload() async {
-    await _start();
-    for (final filter in filmFilters) {
-      final asset = filter.assetPath;
-      if (asset == null) continue;
-      if (_sentAssets.contains(asset)) continue;
-      await _send({
-        'overlayKey': asset,
-        'overlayBytes': await _loadAsset(asset),
-      });
-      _sentAssets.add(asset);
-    }
-  }
+  Future<void> preload() => _start();
 
   Future<Uint8List> process({
     required Uint8List photoBytes,
-    String? overlayAsset,
+    String filterId = 'original',
+    bool lossless = false,
     required double intensity,
     required double frameAspectRatio,
     required bool mirrorHorizontally,
+    double digitalScale = 1,
   }) async {
     await _start();
-    final overlay = overlayAsset == null || _sentAssets.contains(overlayAsset)
-        ? null
-        : await _loadAsset(overlayAsset);
+    final transferClock = Stopwatch()..start();
+    final transferred = TransferableTypedData.fromList([photoBytes]);
+    final transferIn = transferClock.elapsedMicroseconds;
     final result = await _send({
-      'photoBytes': photoBytes,
-      'overlayKey': overlayAsset,
-      'overlayBytes': overlay,
+      'photoBytes': transferred,
+      'transferIn': transferIn,
+      'filterId': filterId,
+      'lossless': lossless,
       'intensity': intensity,
       'frameAspectRatio': frameAspectRatio,
       'mirrorHorizontally': mirrorHorizontally,
+      'digitalScale': digitalScale,
     });
-    if (overlayAsset != null) _sentAssets.add(overlayAsset);
     return result;
   }
 
   Future<Uint8List> _send(Map<String, Object?> payload) {
     if (_closed) throw StateError('사진 처리기가 종료되었습니다.');
+    if (_requests.length >= 3) throw StateError('사진 처리 대기열이 가득 찼습니다.');
     final id = _nextId++;
     final completer = Completer<Uint8List>();
     _requests[id] = completer;
@@ -131,41 +117,46 @@ class PhotoProcessor {
       request.completeError(StateError('사진 처리기가 종료되었습니다.'));
     }
     _requests.clear();
-    _assets.clear();
   }
 }
 
 void _photoWorker(SendPort responses) {
   final requests = ReceivePort();
-  final overlays = <String, img.Image>{};
   responses.send(requests.sendPort);
   requests.listen((dynamic message) {
     final id = message[0] as int;
     final payload = message[1] as Map<String, Object?>;
     try {
-      final key = payload['overlayKey'] as String?;
-      final overlayBytes = payload['overlayBytes'] as Uint8List?;
-      if (key != null && overlayBytes != null && !overlays.containsKey(key)) {
-        final decoded = img.decodeImage(overlayBytes);
-        if (decoded == null) throw const FormatException('필터를 읽을 수 없습니다.');
-        overlays[key] = decoded;
-      }
-      if (payload['photoBytes'] == null) {
-        responses.send([id, Uint8List(0)]);
-        return;
-      }
-      if (key != null && !overlays.containsKey(key)) {
-        throw const FormatException('필터가 준비되지 않았습니다.');
-      }
+      payload['photoBytes'] = (payload['photoBytes'] as TransferableTypedData)
+          .materialize()
+          .asUint8List();
+      final timings = <String, int>{};
+      timings['transferIn'] = payload['transferIn'] as int? ?? 0;
+      Uint8List? thumbnail;
+      final bytes = compositePhoto(
+        photoBytes: payload['photoBytes']! as Uint8List,
+        filterId: payload['filterId'] as String? ?? 'original',
+        lossless: payload['lossless'] as bool? ?? false,
+        intensity: payload['intensity']! as double,
+        frameAspectRatio: payload['frameAspectRatio']! as double,
+        mirrorHorizontally: payload['mirrorHorizontally']! as bool,
+        digitalScale: payload['digitalScale'] as double? ?? 1,
+        timings: timings,
+        onThumbnail: (bytes) => thumbnail = bytes,
+      );
+      final transferClock = Stopwatch()..start();
+      final outputTransfer = TransferableTypedData.fromList([bytes]);
+      final thumbnailTransfer = thumbnail == null
+          ? null
+          : TransferableTypedData.fromList([thumbnail!]);
+      timings['transferOut'] = transferClock.elapsedMicroseconds;
       responses.send([
         id,
-        compositePhoto(
-          photoBytes: payload['photoBytes']! as Uint8List,
-          decodedOverlay: key == null ? null : overlays[key],
-          intensity: payload['intensity']! as double,
-          frameAspectRatio: payload['frameAspectRatio']! as double,
-          mirrorHorizontally: payload['mirrorHorizontally']! as bool,
-        ),
+        {
+          'bytes': outputTransfer,
+          'thumbnail': thumbnailTransfer,
+          'timings': timings,
+        },
       ]);
     } catch (error) {
       responses.send([id, error.toString()]);

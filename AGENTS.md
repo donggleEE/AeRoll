@@ -23,6 +23,12 @@
 핵심 사용 흐름은 **카메라 → 필터 선택 → 촬영 → 앨범 저장 → 사진 확인**이다.
 기본 범위는 이 흐름에 집중한다. 로그인, 서버, 클라우드 동기화, 소셜 기능, 항공권 예약, 결제 등은 별도 요청이 있을 때 추가한다.
 
+2026년 11월 3일 추가 요청으로 두 손가락 줌, 격자·수평계 설정, 사진 비율 선택과 실제 동영상 녹화·저장·앱 갤러리 재생을 확장했다. 이후 사용자가 영상 필터 저장을 명시적으로 요청했으므로 기존 원본 영상 전용 정책을 확장한다. 녹화 시작 시 필터를 고정하고 실제 출력 파일에 합성하며 출력 실패를 성공으로 안내하지 않는다. 사진 진입에는 마이크 권한을 요구하지 않으며 오디오 녹화 권한은 영상 모드에서 처리한다. 최신 구현·검증 상태는 `docs/project_plan.md`를 확인한다.
+
+2026년 11월 4일 재개한 작업은 기본 1배의 실시간 핀치 줌, 최대 100배 디지털 확대와 영상 필터 출력이다. 0.6배는 하드웨어가 지원할 때만 제공하고 미지원 기기는 실제 최소값을 표시한다. 디지털 확대는 미리보기뿐 아니라 사진·영상 파일에도 반영하며 화질 제한을 안내한다. 필름 오버레이는 카메라 영상의 확대와 분리한다. 줌 눈금은 상호작용 시 표시하고 마지막 제스처 후 2초 뒤 서서히 숨긴다.
+
+2026년 11월 4일 추가 요청으로 터치 초점, 사진 타이머 OFF·3·5·10초, 사진 플래시 ON·OFF와 확대 눈금 세로 드래그를 확장한다. 카운트다운은 재셔터·화면 이탈·백그라운드 전환에 취소하고 조작 중인 눈금은 숨기지 않는다. 사진 저장 완료 하단 메시지는 제거하되 오류 알림은 유지한다. 필터 강도는 원본과 최종 클리핑된 필터 결과를 0~100%로 혼합하며, 100%의 기존 고정 RGB 정의를 유지한다. 필터별 마지막 강도는 화면 사용 중 기억하고 미리보기·사진·영상 저장에 선택값을 전달한다. 최신 검증은 `docs/test_report.md`를 확인한다.
+
 ## 디자인과 필터 원칙
 
 - 레트로 카메라와 필름의 감성을 살리면서 촬영과 필터 변경을 쉽게 할 수 있는 UI를 지향한다.
@@ -35,20 +41,31 @@
 - `lib/main.dart`: 앱 진입점과 카메라 화면 구성.
 - `lib/screens/`, `lib/widgets/`, `lib/theme/`: 카메라·필터·갤러리·사진 상세 화면과 공통 표시 요소.
 - `lib/controllers/camera_session.dart`: 카메라 초기화, 촬영과 수명주기 제어.
-- `lib/models/`: 필터와 저장 사진 모델.
-- `lib/services/photo_compositor.dart`: 방향 보정, 촬영 영역 비율에 맞춘 중앙 자르기와 투명 PNG 합성. 전체 화면 미리보기와 저장 사진은 같은 영역 비율을 사용한다.
-- `lib/services/photo_processor.dart`: 영구 이미지 처리 isolate와 필터 디코딩 캐시를 사용한 합성 처리.
-- `lib/services/photo_repository.dart`: 기기 앨범 저장과 앱 사본·메타데이터 보관 및 조회.
+- `lib/controllers/level_controller.dart`: 중력 센서 기반 수평각, 유효성 및 센서 구독 수명주기 처리.
+- `lib/models/`: 필터와 저장 미디어 모델. 기존 `SavedPhoto` 이름을 유지하면서 사진·영상 및 기기 앨범 저장 여부를 구분한다.
+- `lib/models/filter_transform.dart`: 원본·warm·cold의 고정 감마 인코딩 sRGB 변환 정의, 순차 기준식과 채널별 선형식, 최종 정수화 및 알파 보존 픽셀 처리.
+- `lib/services/photo_compositor.dart`: 방향 보정, 촬영 영역 비율에 맞춘 중앙 자르기와 디지털 줌 뒤 고정 RGB 변환. 전체 화면 미리보기와 저장 사진은 같은 영역 비율을 사용한다.
+- `lib/services/photo_processor.dart`: 영구 이미지 처리 isolate를 사용한 사진 처리. PNG 필터 로딩은 제거했다.
+- `lib/services/photo_capture_store.dart`: 촬영 원본·고정 설정의 영구 작업 기록, 재시작 복구와 성공 후 정리. 실패한 사진을 성공으로 표시하지 않는다.
+- `lib/services/video_processor.dart`, `lib/models/zoom_keyframe.dart`: 필터·디지털 줌 키프레임의 네이티브 영상 출력 연동. Android/iOS 실제 출력 검증은 최신 작업 결과를 확인한다.
+- `android/app/src/main/kotlin/com/example/aeroll/VideoEffectsExporter.kt`: Android Media3 영상 출력. `MainActivity.kt`에서 채널을 등록한다.
+- `ios/Runner/AppDelegate.swift`: AVFoundation 영상 출력과 채널 등록. Windows 환경에서 iOS 빌드·실제 출력은 미검증이다.
+- `lib/widgets/zoom_ruler.dart`: 줌 상호작용 때 표시하고 2초 뒤 숨기는 세로 배율 눈금.
+- `lib/widgets/preview_focus_point.dart`: 미리보기의 크롭·확대·반전·방향을 고려한 초점 좌표 변환.
+- `lib/widgets/film_filter_effect.dart`, `assets/shaders/film_filter.frag`: 클리핑된 필터 결과와 원본의 강도 혼합 미리보기. Impeller 셰이더와 호환 렌더링 경로를 구분한다.
+- `lib/services/photo_repository.dart`: 사진·영상의 기기 앨범 저장과 앱 사본·메타데이터 보관 및 조회. 영상 앨범 저장 실패 시 보존한 앱 사본은 성공으로 안내하지 않고 저장 상태를 구분한다.
 - `test/`: 위젯, 이미지 합성과 사진 저장소 등 관련 자동 테스트.
-- `assets/images/filter/`: 제공된 `light.png`, `cold.png` 필터 이미지. 이전 `example.png`는 삭제되었으며 원본·라이트·콜드 선택 흐름으로 교체했다.
+- 기존 `assets/images/filter/`의 PNG 필터와 에셋 등록은 삭제했다. 필터 선택은 기존 위치의 원본·warm·cold이며 수치 정의는 `filter_transform.dart`에서 관리한다.
 - `assets/images/example/example_image.jpg`: 각 필름을 적용한 선택 버튼 썸네일의 공통 예시 사진.
 - `pubspec.yaml`: SDK 제약, 의존성, 에셋 설정.
 - `analysis_options.yaml`: Dart 정적 분석 설정.
 - `android/`, `ios/`: 모바일 플랫폼 설정 및 권한 구성.
 - `web/`, `windows/`, `macos/`, `linux/`도 생성되어 있으나 제품의 핵심 대상은 스마트폰이다.
 - 카메라·필터 합성·앨범 저장 로직과 화면이 구현되어 있다. 구현 상태와 검증 상태는 구분하며 최신 진행 및 검증 현황은 `docs/project_plan.md`를 참고한다.
+- 줌, 격자·수평계 설정, 사진 비율, 영상·소리 녹화와 갤러리 재생을 구현했다. 최신 초점·타이머·플래시·눈금 드래그·필터 강도 확장 후 정적 분석·자동 테스트 93건과 Android APK 빌드를 통과했다. 제공 JPG의 100% 필터 기준 RMSE는 warm 2.60048, cold 2.47645다. 이전 PNG 영상의 네이티브 비교·에뮬레이터 저장 확인은 과거 이력이며 새 RGB 영상의 실파일 검증으로 간주하지 않는다. 실제 초점·발광·모바일 GPU·물리 센서·음성 품질·iOS는 별도 검증이 필요하다.
 - 앱 갤러리는 앱 내부에 보관한 사진 사본을 조회한다. 기기 앨범에서 사진을 삭제해도 앱 사본은 별도로 남는다.
 - 사용자 명령과 그 결과 생성·수정한 파일은 `docs/command_history.md`에 기록한다.
+- 최신 촬영 후처리 최적화는 정적 분석·자동 테스트 101건과 Android APK 빌드를 통과했다. worker 소유 버퍼 직접 처리·제한된 LUT 캐시·작은 썸네일·원본 보존/재시도를 사용하며, 단계별 시각은 `CameraSession.photoTimings`에 최근 20개만 남긴다. Windows 12MP 비교와 실제 기기 검증은 구분하고 상세 수치는 `docs/photo_performance.md`를 확인한다.
 
 ## 구현 지침
 

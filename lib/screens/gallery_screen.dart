@@ -6,6 +6,7 @@ import '../models/saved_photo.dart';
 import '../services/photo_repository.dart';
 import '../theme/app_theme.dart';
 import 'photo_detail_screen.dart';
+import 'video_detail_screen.dart';
 
 class GalleryScreen extends StatefulWidget {
   const GalleryScreen({super.key, required this.repository});
@@ -64,7 +65,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
           return _GalleryMessage(
             icon: Icons.photo_library_outlined,
             title: '첫 번째 순간을 담아볼까요?',
-            message: '촬영한 사진이 이곳에 차곡차곡 쌓여요.',
+            message: '촬영한 사진과 동영상이 이곳에 차곡차곡 쌓여요.',
             buttonLabel: '사진 찍으러 가기',
             onPressed: () => Navigator.of(context).pop(),
           );
@@ -85,7 +86,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                   child: Text(
-                    '${photos.length}장의 순간 · 최근 촬영순\n앱에 보관한 사진은 기기 앨범과 별도로 유지돼요.',
+                    '${photos.length}개의 순간 · 최근 촬영순\n앱에 보관한 사진은 기기 앨범과 별도로 유지돼요.',
                     style: const TextStyle(color: AppTheme.muted),
                   ),
                 ),
@@ -105,7 +106,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                     return Semantics(
                       button: true,
                       label:
-                          '${photo.filterName}, ${formatPhotoDate(photo.createdAt)} 사진 열기',
+                          '${photo.isVideo ? '동영상' : photo.filterName}, ${formatPhotoDate(photo.createdAt)} 열기',
                       child: Material(
                         color: AppTheme.line,
                         borderRadius: BorderRadius.circular(12),
@@ -113,23 +114,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         child: InkWell(
                           onTap: () => Navigator.of(context).push<void>(
                             MaterialPageRoute(
-                              builder: (_) => PhotoDetailScreen(photo: photo),
+                              builder: (_) => photo.isVideo
+                                  ? VideoDetailScreen(video: photo)
+                                  : PhotoDetailScreen(photo: photo),
                             ),
                           ),
                           child: Hero(
                             tag: 'photo-${photo.id}',
-                            child: Image.file(
-                              File(photo.path),
-                              fit: BoxFit.cover,
-                              cacheWidth: 480,
-                              excludeFromSemantics: true,
-                              errorBuilder: (_, _, _) => const Center(
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  color: AppTheme.muted,
-                                ),
-                              ),
-                            ),
+                            child: GalleryMediaThumbnail(photo: photo),
                           ),
                         ),
                       ),
@@ -185,4 +177,48 @@ class _GalleryMessage extends StatelessWidget {
       ),
     ),
   );
+}
+
+class GalleryMediaThumbnail extends StatelessWidget {
+  const GalleryMediaThumbnail({super.key, required this.photo});
+  final SavedPhoto photo;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!photo.isVideo) {
+      return Image.file(
+        File(photo.path),
+        fit: BoxFit.cover,
+        cacheWidth: 480,
+        excludeFromSemantics: true,
+        errorBuilder: (_, _, _) => const Center(
+          child: Icon(Icons.broken_image_outlined, color: AppTheme.muted),
+        ),
+      );
+    }
+    return Stack(
+      key: ValueKey('video-tile-${photo.id}'),
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: AppTheme.ink),
+        const Center(
+          child: Icon(Icons.videocam_outlined, color: Colors.white54, size: 42),
+        ),
+        const Positioned(
+          right: 10,
+          bottom: 10,
+          child: Icon(Icons.play_circle_fill, color: Colors.white, size: 30),
+        ),
+        Positioned(
+          left: 10,
+          top: 10,
+          right: 10,
+          child: Text(
+            photo.isInDeviceAlbum ? '동영상' : '동영상 · 앱 사본',
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
 }

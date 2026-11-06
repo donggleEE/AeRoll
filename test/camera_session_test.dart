@@ -18,6 +18,7 @@ void main() {
     final controller = FakeCameraController()
       ..initialization = Completer<void>();
     final session = CameraSession(
+      captureStore: MemoryPhotoCaptureStore(),
       photoProcessor: FakePhotoProcessor(),
       isSupported: true,
       cameraLoader: () async => [testCamera],
@@ -36,6 +37,7 @@ void main() {
   test('촬영 실패 후 진행 상태를 복구하고 중복 촬영을 거부한다', () async {
     final controller = FakeCameraController()..picture = Completer<XFile>();
     final session = CameraSession(
+      captureStore: MemoryPhotoCaptureStore(),
       photoProcessor: FakePhotoProcessor(),
       isSupported: true,
       cameraLoader: () async => [testCamera],
@@ -70,6 +72,7 @@ void main() {
         galleryWriter: (_) async {},
       );
       final session = CameraSession(
+        captureStore: MemoryPhotoCaptureStore(),
         photoProcessor: FakePhotoProcessor(),
         repository: repository,
         isSupported: true,
@@ -98,6 +101,7 @@ void main() {
 
   test('카메라 없음과 권한 거부를 사용자 오류로 제공한다', () async {
     final empty = CameraSession(
+      captureStore: MemoryPhotoCaptureStore(),
       photoProcessor: FakePhotoProcessor(),
       isSupported: true,
       cameraLoader: () async => [],
@@ -106,6 +110,7 @@ void main() {
     expect(empty.errorMessage, contains('사용 가능한 카메라'));
     empty.dispose();
     final denied = CameraSession(
+      captureStore: MemoryPhotoCaptureStore(),
       photoProcessor: FakePhotoProcessor(),
       isSupported: true,
       cameraLoader: () async => throw CameraException('CameraAccessDenied', ''),

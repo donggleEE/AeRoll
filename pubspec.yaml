@@ -38,6 +38,8 @@ dependencies:
   gal: ^2.3.3
   image: ^4.5.4
   path_provider: ^2.1.5
+  sensors_plus: ^7.0.0
+  video_player: ^2.11.1
 
 dev_dependencies:
   flutter_test:
@@ -60,8 +62,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  shaders:
+    - assets/shaders/film_filter.frag
   assets:
-    - assets/images/filter/
     - assets/images/example/example_image.jpg
 
   # To add assets to your application, add an assets section, like this:

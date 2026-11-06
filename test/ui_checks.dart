@@ -16,10 +16,11 @@ import 'support/fake_photo_processor.dart';
 
 class MemoryRepository extends PhotoRepository {
   Object? error;
+  List<SavedPhoto> items = [];
   @override
   Future<List<SavedPhoto>> listPhotos() async {
     if (error != null) throw error!;
-    return [];
+    return items;
   }
 }
 
@@ -30,6 +31,11 @@ class ScreenSession extends CameraSession {
   final pending = Completer<SavedPhoto>();
   int captures = 0, suspends = 0, resumes = 0, switches = 0, saves = 0;
   bool capturing = false, front = false;
+  bool video = false, recording = false, recordingBusy = false;
+  int videoStarts = 0, videoStops = 0;
+  FilmFilter? recordedFilter;
+  double zoom = 1;
+  final zoomRequests = <double>[];
   double? capturedRatio;
   @override
   CameraController? get cameraController => controller;
@@ -40,9 +46,68 @@ class ScreenSession extends CameraSession {
   @override
   bool get isFrontCamera => front;
   @override
-  bool get canSwitchCamera => controller != null && !capturing;
+  bool get canSwitchCamera =>
+      controller != null && !capturing && !recording && !recordingBusy;
   @override
-  bool get canCapture => controller != null && !capturing && saves < 3;
+  bool get canCapture =>
+      controller != null && !capturing && saves < 3 && !video;
+  @override
+  bool get videoMode => video;
+  @override
+  bool get isRecording => recording;
+  @override
+  bool get isRecordingBusy => recordingBusy;
+  @override
+  bool get canStartRecording =>
+      controller != null && video && !recording && !recordingBusy;
+  @override
+  double get currentZoom => zoom;
+  @override
+  double get minZoom => 1;
+  @override
+  double get maxZoom => 100;
+  @override
+  double get nativeMaxZoom => 8;
+  @override
+  double get previewDigitalZoom => (zoom / 8).clamp(1.0, 100.0);
+  @override
+  Future<void> setZoom(double value) async {
+    zoom = value;
+    zoomRequests.add(value);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setVideoMode(bool value) async {
+    video = value;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> startVideoRecording({
+    FilmFilter filter = const FilmFilter(id: 'original', name: '원본'),
+    double intensity = 1,
+  }) async {
+    recordedFilter = filter;
+    recording = true;
+    videoStarts++;
+    notifyListeners();
+  }
+
+  @override
+  Future<SavedPhoto> stopVideoRecording() async {
+    recording = false;
+    videoStops++;
+    notifyListeners();
+    return SavedPhoto(
+      id: 'test-video',
+      path: 'missing-ui-video.mp4',
+      createdAt: DateTime.now(),
+      filterName: '원본 영상',
+      isVideo: true,
+    );
+  }
+
   @override
   int get pendingSaves => saves;
   @override
@@ -136,13 +201,15 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpAndSettle();
     expect(find.text('카메라 권한을 허용해 주세요'), findsOneWidget);
-    expect(tester.getSize(find.byType(CameraViewfinder)), const Size(390, 844));
+    final viewport = tester.getSize(find.byType(CameraViewfinder));
+    expect(viewport.width, 390);
+    expect(viewport.width / viewport.height, closeTo(9 / 16, .0001));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     await tester.pumpAndSettle();
   });
-  testWidgets('실제 예시 이미지와 light cold 레이어 및 선택 테두리를 표시한다', (tester) async {
+  testWidgets('같은 예시 이미지에 warm cold 변환과 선택 테두리를 표시한다', (tester) async {
     screenSize(tester, const Size(390, 844));
     final session = ScreenSession(repository: MemoryRepository());
     await tester.pumpWidget(MyApp(session: session));
@@ -169,18 +236,24 @@ void main() {
           .map((asset) => asset.assetName)
           .toList();
       expect(assets, contains(samplePhotoAsset));
-      if (filter.assetPath != null) expect(assets, contains(filter.assetPath));
-      expect(assets.length, filter.assetPath == null ? 1 : 2);
+      expect(assets, [samplePhotoAsset]);
+      expect(
+        find.descendant(
+          of: find.byKey(Key('filter-${filter.id}')),
+          matching: find.byType(ColorFiltered),
+        ),
+        filter.isOriginal ? findsNothing : findsOneWidget,
+      );
     }
-    await tester.tap(find.byKey(const Key('filter-light')));
+    await tester.tap(find.byKey(const Key('filter-warm')));
     await tester.pumpAndSettle();
     expect(
       tester.widget<Text>(find.byKey(const Key('selected-filter-name'))).data,
-      '라이트',
+      'warm',
     );
     final selected = tester.widget<AnimatedContainer>(
       find.descendant(
-        of: find.byKey(const Key('filter-light')),
+        of: find.byKey(const Key('filter-warm')),
         matching: find.byType(AnimatedContainer),
       ),
     );
@@ -206,7 +279,7 @@ void main() {
     await tester.tap(capture);
     await tester.pump();
     expect(session.captures, 1);
-    expect(session.capturedRatio, closeTo(390 / 844, .0001));
+    expect(session.capturedRatio, closeTo(9 / 16, .0001));
     expect(
       tester
           .widget<AnimatedOpacity>(find.byKey(const Key('shutter-flash')))

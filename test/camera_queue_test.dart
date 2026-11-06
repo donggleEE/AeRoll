@@ -18,12 +18,15 @@ const frontCamera = CameraDescription(
 );
 
 class GatedRepository extends PhotoRepository {
+  @override
+  Future<SavedPhoto?> retryPreparedPhoto(String id) async => null;
   final jobs = <Completer<void>>[];
   final filters = <String>[];
   @override
   Future<SavedPhoto> savePhoto({
     required Uint8List bytes,
     required String filterName,
+    String? captureId,
   }) async {
     filters.add(filterName);
     final gate = Completer<void>();
@@ -44,6 +47,7 @@ void main() {
   test('전후면 전환과 복귀 렌즈를 유지하고 단일 렌즈는 안전하게 거부한다', () async {
     final made = <FakeCameraController>[];
     final session = CameraSession(
+      captureStore: MemoryPhotoCaptureStore(),
       isSupported: true,
       photoProcessor: FakePhotoProcessor(),
       cameraLoader: () async => [testCamera, frontCamera],
@@ -67,6 +71,7 @@ void main() {
     session.dispose();
     await settleEvents();
     final single = CameraSession(
+      captureStore: MemoryPhotoCaptureStore(),
       isSupported: true,
       photoProcessor: FakePhotoProcessor(),
       cameraLoader: () async => [testCamera],
@@ -84,6 +89,7 @@ void main() {
     final processor = FakePhotoProcessor();
     final controllers = <FakeCameraController>[];
     final session = CameraSession(
+      captureStore: MemoryPhotoCaptureStore(),
       repository: repository,
       photoProcessor: processor,
       isSupported: true,
@@ -143,10 +149,10 @@ void main() {
     repository.jobs[2].complete();
     await third;
     await settleEvents();
-    expect(repository.filters, ['라이트', '콜드', '원본']);
+    expect(repository.filters, ['warm', 'cold', '원본']);
     expect(session.pendingSaves, 0);
     expect(processor.calls[0], (
-      asset: filmFilters[1].assetPath,
+      filterId: filmFilters[1].id,
       intensity: .5,
       ratio: .5,
       mirror: false,
@@ -165,6 +171,7 @@ void main() {
       ..onPicture = () async =>
           XFile.fromData(Uint8List.fromList([1]), name: 'shot');
     final session = CameraSession(
+      captureStore: MemoryPhotoCaptureStore(),
       repository: repository,
       photoProcessor: processor,
       isSupported: true,

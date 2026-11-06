@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/film_filter.dart';
+import 'film_filter_effect.dart';
 
-/// 실제 예시 사진 위에 필름 PNG를 source-over로 합성한 선택 미리보기.
+/// 공통 예시 사진에 카메라와 같은 고정 RGB 변환을 표시한다.
 class FilmFilterSelector extends StatelessWidget {
   const FilmFilterSelector({
     super.key,
@@ -53,26 +54,15 @@ class FilmFilterSelector extends StatelessWidget {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.asset(
-                          samplePhotoAsset,
-                          fit: BoxFit.cover,
-                          cacheWidth: 240,
-                          excludeFromSemantics: true,
-                        ),
-                        if (filter.assetPath != null)
-                          Opacity(
-                            opacity: intensity.clamp(0, 1),
-                            child: Image.asset(
-                              filter.assetPath!,
-                              fit: BoxFit.cover,
-                              cacheWidth: 240,
-                              excludeFromSemantics: true,
-                            ),
-                          ),
-                      ],
+                    child: FilmFilterEffect(
+                      filter: filter,
+                      intensity: isSelected ? intensity : 1,
+                      child: Image.asset(
+                        samplePhotoAsset,
+                        fit: BoxFit.cover,
+                        cacheWidth: 240,
+                        excludeFromSemantics: true,
+                      ),
                     ),
                   ),
                 ),
